@@ -295,7 +295,8 @@ public class LeakDetector implements Runnable, BundleActivator {
     }
 
     private static ClassLoader getClassloader(Bundle b) {
-        BundleWiring bw = b.adapt(BundleWiring.class);
+        //Somehow it fails to compile on JDK 7. Explicit cast helps
+        BundleWiring bw = (BundleWiring) b.adapt(BundleWiring.class);
         if(bw != null){
             return bw.getClassLoader();
         }
