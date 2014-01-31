@@ -21,20 +21,17 @@ import org.osgi.framework.Bundle;
 import org.osgi.framework.BundleActivator;
 import org.osgi.framework.BundleContext;
 import org.osgi.framework.BundleEvent;
-import org.osgi.framework.BundleListener;
 import org.osgi.framework.Constants;
 import org.osgi.framework.wiring.BundleWiring;
+import org.osgi.util.tracker.BundleTracker;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-public class LeakDetector implements BundleListener, Runnable, BundleActivator {
-
+public class LeakDetector implements Runnable, BundleActivator {
     /**
      * Set of PhantomReferences such that PhantomReference itself is not GC
      */
     private final Set<Reference<?>> refs = Collections.synchronizedSet(new HashSet<Reference<?>>());
-
-    private final Set<Long> registeredBundles = new HashSet<Long>();
 
     /**
      * Lock to control concurrent access to internal data structures
@@ -51,15 +48,15 @@ public class LeakDetector implements BundleListener, Runnable, BundleActivator {
 
     private BundleContext context;
 
+    private BundleTracker bundleTracker;
+
     public void start(BundleContext context) {
         this.context = context;
-        context.addBundleListener(this);
-        registerCurrentBundles();
+        this.bundleTracker = new LeakDetectorBundleTracker(context);
 
         referencePoller = new Thread(this, "Bundle Leak Detector Thread");
         referencePoller.setDaemon(true);
         referencePoller.start();
-
 
         Dictionary<String,Object> printerProps = new Hashtable<String, Object>();
         printerProps.put(Constants.SERVICE_VENDOR, "Apache Software Foundation");
@@ -71,31 +68,24 @@ public class LeakDetector implements BundleListener, Runnable, BundleActivator {
         context.registerService(LeakDetector.class.getName(), this, printerProps);
     }
 
-    private void registerCurrentBundles() {
-        for (Bundle b : context.getBundles()) {
-            //Ensure that a bundle is not registered multiple times
-            //As its possible that a bundle is registered after the listener is registered
-            //and we call BundleContext.getBundles. So same bundle would be registered twice
-            synchronized (leakDetectorLock) {
-                if (!registeredBundles.contains(b.getBundleId())) {
-                    registerBundle(b);
-                }
-            }
-        }
-    }
-
     public void stop(BundleContext context) {
-        context.removeBundleListener(this);
+        this.bundleTracker.close();
         referencePoller.interrupt();
     }
 
-    public void bundleChanged(BundleEvent event) {
-        //Only listen for started
-        if (event.getType() == BundleEvent.STARTED) {
+    private class LeakDetectorBundleTracker extends BundleTracker {
+        public LeakDetectorBundleTracker(BundleContext context) {
+            super(context, Bundle.ACTIVE, null);
+            this.open();
+        }
+
+        @Override
+        public Object addingBundle(Bundle bundle, BundleEvent event) {
+            //Only listen for started
             synchronized (leakDetectorLock) {
-                registeredBundles.add(event.getBundle().getBundleId());
-                registerBundle(event.getBundle());
+                registerBundle(bundle);
             }
+            return bundle;
         }
     }
 
