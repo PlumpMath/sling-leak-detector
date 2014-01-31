@@ -29,21 +29,27 @@ import org.slf4j.LoggerFactory;
 
 public class LeakDetector implements BundleListener, Runnable, BundleActivator {
 
-    private BundleContext context;
-
+    /**
+     * Set of PhantomReferences such that PhantomReference itself is not GC
+     */
     private final Set<Reference<?>> refs = Collections.synchronizedSet(new HashSet<Reference<?>>());
 
     private final Set<Long> registeredBundles = new HashSet<Long>();
 
+    /**
+     * Lock to control concurrent access to internal data structures
+     */
     private final Object leakDetectorLock = new Object();
 
     private final ReferenceQueue<ClassLoader> queue = new ReferenceQueue<ClassLoader>();
 
     private final ConcurrentMap<Long, BundleInfo> bundleInfos = new ConcurrentHashMap<Long, BundleInfo>();
 
-    private Logger log = LoggerFactory.getLogger(getClass());
+    private final Logger log = LoggerFactory.getLogger(getClass());
 
     private Thread referencePoller;
+
+    private BundleContext context;
 
     public void start(BundleContext context) {
         this.context = context;
@@ -129,7 +135,7 @@ public class LeakDetector implements BundleListener, Runnable, BundleActivator {
 
         log.info("Shutting down reference collector for Classloader LeakDetector");
         //Drain out the queue
-        while (queue.poll() != null) ;
+        while (queue.poll() != null);
     }
 
     private void removeBundle(BundleReference ref) {
